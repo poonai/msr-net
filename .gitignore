@@ -8,6 +8,8 @@ wheels/
 
 data/hq_images/*
 data/low_light_images/*
+data/low_light_images_patches/*
+data/hq_images_patches/*
 
 # Virtual environments
 .venv
