@@ -119,7 +119,10 @@ class DifferenceOfConvolution(nn.Module):
         self.msr_convs = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1), nn.ReLU()
+                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1),
+                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1),
+                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1), 
+                    nn.ReLU(),
                 )
                 for _ in range(DIFFERENCE_OF_CONVOLUTION_DEPTH)
             ]
@@ -129,17 +132,20 @@ class DifferenceOfConvolution(nn.Module):
 
     def forward(self, input):
         msr_outputs = []
-        for conv in self.msr_convs:
+        for idx, conv in enumerate(self.msr_convs):
             x1 = input
-            if len(msr_outputs) > 1:
-                x1 = msr_outputs[-1]
+            # if len(msr_outputs) > 1:
+            #     x1 = msr_outputs[-1]
             msr_output = conv(x1)
+            save_inference_img(output=msr_output.clone(), path=f'diff_{idx}.png')
             msr_outputs.append(msr_output)
 
         concated_msr = torch.concat(msr_outputs, dim=1)
         logging.debug(f"contacted msr shape: {concated_msr.size()}")
 
         avg_msr = self.avg_conv(concated_msr)
+        
+        save_inference_img(output=avg_msr.clone(), path=f'avg.png')
 
         logging.debug(f"avg msr shape {avg_msr.size()}")
         # removing the illumination
@@ -378,13 +384,11 @@ def check():
     
     output = model.forward(test_img)
     
-    output = model.forward(test_img)
-    
     save_inference_img(output=output, path = "after.png")
 
 
 @app.local_entrypoint()
 def main():
-    img_dir = "data"
-    modal_entrypoint.local(batch_size=64, img_dir=img_dir)
-    #check()
+    # img_dir = "data"
+    # modal_entrypoint.local(batch_size=64, img_dir=img_dir)
+    check()
