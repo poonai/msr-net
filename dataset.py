@@ -18,9 +18,8 @@ class LowLightDataset(Dataset):
         x_path = self.x_img_path[idx]
         
         x_splits = x_path.name.split('_')
-        y_file_name = f'{x_splits[0]}_patch_{x_splits[len(x_splits)]}.png' #[0]+'.png'
+        y_file_name = f'{x_splits[0]}_patch_{x_splits[len(x_splits)-1]}'
         y_path = os.path.join(self.img_dir, 'hq_images_patches', y_file_name)
-        print(x_path, y_path)
         return decode_image(x_path), decode_image(y_path)
         
         

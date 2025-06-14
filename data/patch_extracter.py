@@ -66,7 +66,7 @@ def create_patches(input_folder, output_folder, patch_size=64):
             except Exception as e:
                 print(f"Error processing {filename}: {str(e)}")
 
-folders = [('data/hq_images', 'data/hq_images_patches'),
-          ('data/low_light_images', 'data/low_light_images_patches')]
-for folder in folders:
-    create_patches(folder[0], folder[1])
+# folders = [('data/hq_images', 'data/hq_images_patches'),
+#           ('data/low_light_images', 'data/low_light_images_patches')]
+# for folder in folders:
+#     create_patches(folder[0], folder[1])
