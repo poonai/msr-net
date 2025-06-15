@@ -23,6 +23,7 @@ image_preprocess = transforms.Compose(
     ]
 )
 
+
 def get_preprocessed_img(path):
     return image_preprocess(decode_image(path))
 
@@ -49,7 +50,9 @@ class LowLightDataset(Dataset):
         )
 
         try:
-            return get_preprocessed_img(low_light_image),get_preprocessed_img(high_quality_image)
+            return get_preprocessed_img(low_light_image), get_preprocessed_img(
+                high_quality_image
+            )
         except Exception as e:
             print(f"unable to decode {low_light_image} {high_quality_image}: {e}")
             raise e
@@ -110,42 +113,70 @@ class LogTransformationConv(nn.Module):
         return output
 
 
-DIFFERENCE_OF_CONVOLUTION_DEPTH = 10
+DIFFERENCE_OF_CONVOLUTION_DEPTH = 2
+
+KERNEL_SIZE = [3, 5]
+
+STRIDE = [1, 2]
+
+PADDING = [1, 2]
+
+DIFFERENCE_WAVELENGTH_DEPTH = 6
+
+
+def get_conv(kernel):
+    if kernel == 3:
+        return nn.Sequential(
+            nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1), nn.ReLU()
+        )
+
+    return nn.Sequential(
+        nn.Conv2d(3, 3, kernel_size=5, stride=2, padding=2),
+        nn.ConvTranspose2d(3, 3, kernel_size=5, stride=2, padding=2, output_padding=1),
+        nn.ReLU(),
+    )
 
 
 class DifferenceOfConvolution(nn.Module):
     def __init__(self):
         super(DifferenceOfConvolution, self).__init__()
-        self.msr_convs = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1),
-                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1),
-                    nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1), 
-                    nn.ReLU(),
+        convs = []
+        for i in range(DIFFERENCE_OF_CONVOLUTION_DEPTH):
+            convs.append(
+                nn.ModuleList(
+                    [
+                        get_conv(KERNEL_SIZE[i])
+                        for _ in range(DIFFERENCE_WAVELENGTH_DEPTH)
+                    ]
                 )
-                for _ in range(DIFFERENCE_OF_CONVOLUTION_DEPTH)
-            ]
-        )
+            )
+        self.msr_convs = nn.ModuleList(convs)
 
-        self.avg_conv = nn.Conv2d(3 * DIFFERENCE_OF_CONVOLUTION_DEPTH, 3, kernel_size=1)
+        self.avg_conv = nn.Conv2d(
+            3 * DIFFERENCE_OF_CONVOLUTION_DEPTH * DIFFERENCE_WAVELENGTH_DEPTH,
+            3,
+            kernel_size=1,
+        )
 
     def forward(self, input):
         msr_outputs = []
-        for idx, conv in enumerate(self.msr_convs):
-            x1 = input
-            # if len(msr_outputs) > 1:
-            #     x1 = msr_outputs[-1]
-            msr_output = conv(x1)
-            save_inference_img(output=msr_output.clone(), path=f'diff_{idx}.png')
-            msr_outputs.append(msr_output)
+        for idx, diff in enumerate(self.msr_convs):
+            mem = []
+            for wav_idx, conv in enumerate(diff):
+                x1 = input
+                if len(mem) > 1:
+                    x1 = mem[-1]
+                msr_out = conv(x1)
+                mem.append(msr_out)
+                msr_outputs.append(msr_out)
+                save_inference_img(output=msr_out.clone(), path=f"diff_{idx}_{wav_idx}.png")
 
         concated_msr = torch.concat(msr_outputs, dim=1)
         logging.debug(f"contacted msr shape: {concated_msr.size()}")
 
         avg_msr = self.avg_conv(concated_msr)
-        
-        save_inference_img(output=avg_msr.clone(), path=f'avg.png')
+
+        save_inference_img(output=avg_msr.clone(), path=f"avg.png")
 
         logging.debug(f"avg msr shape {avg_msr.size()}")
         # removing the illumination
@@ -189,7 +220,7 @@ class Model(nn.Module):
         self.color_restoration = ColorRestoration()
 
     def forward(self, input):
-       # log_transformed = self.log_transformation_layer(input)
+        # log_transformed = self.log_transformation_layer(input)
         raw_image = self.difference_of_convolution(input)
         output = self.color_restoration(raw_image)
         return output
@@ -218,27 +249,26 @@ def entry_point(batch_size=64, img_dir="/root/remote/data", device=any):
     model = Model().to(device)
 
     train(train_loader, model, device=device)
-    
+
     model.eval()
-    
+
     test_img = img_for_inference("/home/saint/msr-net/data/low_light_images/1_ll_4.png")
-    
+
     output = model.forward(test_img)
-    
-    save_inference_img(output=output, path = "before.png")
-    
+
+    save_inference_img(output=output, path="before.png")
+
     torch.save(model.state_dict(), "model.pt")
-    
+
     model = Model()
-    
+
     model.load_state_dict(torch.load("model.pt"))
-    
+
     model.eval()
-    
+
     output = model.forward(test_img)
-    
-    save_inference_img(output=output, path = "after.png")
-    
+
+    save_inference_img(output=output, path="after.png")
 
 
 def train(
@@ -284,10 +314,12 @@ def img_for_inference(path):
     img = get_preprocessed_img(path=path)
     return img.unsqueeze(0)
 
+
 def save_inference_img(output, path):
     img = (output[0] * 255).squeeze(0).permute(1, 2, 0)
     image = Image.fromarray(img.detach().to(torch.uint8).numpy())
     image.save(path)
+
 
 def train_epoch(
     data_loader: DataLoader,
@@ -320,7 +352,6 @@ def train_epoch(
             eta = elapsed / (batch_idx + 1) * iters_left
             avg_loss = total_loss / (batch_idx + 1)
             print(f"avg loss {avg_loss:.4f} ETA {eta / 60:.1f} EPOCH {epoch}")
-        
 
     return total_loss / len(data_loader)
 
@@ -376,19 +407,18 @@ def check():
     model = Model()
 
     model.load_state_dict(torch.load("model.pt"))
-    
+
     model.eval()
-    
-     
+
     test_img = img_for_inference("/home/saint/msr-net/data/low_light_images/1_ll_4.png")
-    
+
     output = model.forward(test_img)
-    
-    save_inference_img(output=output, path = "after.png")
+
+    save_inference_img(output=output, path="after.png")
 
 
 @app.local_entrypoint()
 def main():
-    # img_dir = "data"
-    # modal_entrypoint.local(batch_size=64, img_dir=img_dir)
+    #img_dir = "data"
+    #modal_entrypoint.local(batch_size=64, img_dir=img_dir)
     check()
